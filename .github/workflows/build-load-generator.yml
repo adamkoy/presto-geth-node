@@ -1,4 +1,5 @@
 name: Build and Push Load Generator Image
+
 on:
     push:
         branches: [infra-setup]
@@ -6,6 +7,7 @@ on:
             - "load-generator-image/**"
             - ".github/workflows/build-load-generator.yml"
     workflow_dispatch: {}
+    workflow_call: {}
 
 env:
     # Full image reference, e.g. "your-user/geth-workload:latest" or "ghcr.io/owner/geth-workload:latest"

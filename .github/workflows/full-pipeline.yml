@@ -1,0 +1,56 @@
+name: Full Pipeline (Lint → Image → Terraform → Helm)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (dev, stage, prod)"
+        required: true
+        default: "dev"
+        type: choice
+        options: ["dev", "stage", "prod"]
+      apply_terraform:
+        description: "Run terraform apply after plan?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  lint:
+    name: Lint (Python + YAML)
+    uses: ./.github/workflows/ci-cd.yml
+    secrets: inherit
+
+  build-image:
+    name: Build & Push Workload Image
+    needs: lint
+    uses: ./.github/workflows/build-load-generator.yml
+    secrets: inherit
+
+  terraform:
+    name: Terraform Plan & Apply
+    needs: build-image
+    uses: ./.github/workflows/infra-deploy.yml
+    with:
+      environment: ${{ github.event.inputs.environment }}
+      apply: ${{ github.event.inputs.apply_terraform }}
+    secrets: inherit
+
+  helm:
+    name: Helm Deploy
+    needs: terraform
+    uses: ./.github/workflows/helm-deploy.yml
+    with:
+      environment: ${{ github.event.inputs.environment }}
+    secrets: inherit
+
+

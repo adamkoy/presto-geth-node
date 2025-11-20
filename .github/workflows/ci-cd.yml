@@ -5,6 +5,7 @@ on:
     branches: [main, infra-setup]
   pull_request:
     branches: [main, infra-setup]
+  workflow_call: {}
 
 jobs:
   lint:

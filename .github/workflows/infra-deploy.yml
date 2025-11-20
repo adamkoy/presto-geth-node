@@ -22,6 +22,16 @@ on:
                 default: "dev"
                 type: choice
                 options: ["dev", "stage", "prod"]
+    workflow_call:
+        inputs:
+            apply:
+                description: "Run terraform apply after plan?"
+                required: true
+                type: string
+            environment:
+                description: "Target environment (dev, stage, prod)"
+                required: true
+                type: string
 
 permissions:
     id-token: write
