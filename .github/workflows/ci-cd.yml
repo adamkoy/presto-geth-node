@@ -39,4 +39,4 @@ jobs:
 
       - name: Lint YAML files
         run: |
-          yamllint *.yaml *.yml .github/workflows/*.yml
+          yamllint .github/workflows charts
