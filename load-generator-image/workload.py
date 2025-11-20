@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Final
 
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from web3 import Web3
 from web3.exceptions import Web3Exception
 
@@ -52,6 +52,15 @@ METRIC_LATENCY = Gauge(
     "Average transaction latency in seconds over the test window",
 )
 
+LATENCY_HISTOGRAM = Histogram(
+    "geth_workload_tx_latency_seconds",
+    "Histogram of transaction latency in seconds",
+)
+
+RPC_ERROR_COUNTER = Counter(
+    "geth_workload_rpc_errors_total",
+    "Total JSON-RPC errors observed by the workload",
+)
 HEAD_BLOCK = Gauge(
     "geth_workload_head_block_number",
     "Latest block number observed by the workload",
@@ -140,6 +149,9 @@ def _run_load(
                 duration = time.perf_counter() - start
                 gas_used = receipt.get("gasUsed", 0) or 0
 
+                # Record successful latency in the histogram
+                LATENCY_HISTOGRAM.observe(duration)
+
                 with lock:
                     total_sent += 1
                     if receipt.get("status", 0) != 1:
@@ -156,6 +168,7 @@ def _run_load(
             except Exception as exc:  # noqa: BLE001
                 with lock:
                     total_failed += 1
+                RPC_ERROR_COUNTER.inc()
                 logger.warning("Worker %s: tx failed: %s", worker_id, exc)
 
             # Pace to target TPS

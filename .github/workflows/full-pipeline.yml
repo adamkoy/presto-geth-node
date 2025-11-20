@@ -15,6 +15,12 @@ on:
         default: "true"
         type: choice
         options: ["false", "true"]
+      deploy_helm:
+        description: "Deploy Helm charts after Terraform step?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["false", "true"]
 
 permissions:
   id-token: write
@@ -48,9 +54,8 @@ jobs:
   helm:
     name: Helm Deploy
     needs: terraform
+    if: github.event.inputs.deploy_helm == 'true'
     uses: ./.github/workflows/helm-deploy.yml
     with:
       environment: ${{ github.event.inputs.environment }}
     secrets: inherit
-
-

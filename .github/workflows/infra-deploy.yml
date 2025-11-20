@@ -1,13 +1,8 @@
 name: Terraform Deploy
 
 on:
-    push:
-        branches: [infra-setup]
-        paths:
-            - "main.tf"
-            - "variables.tf"
-            - "trust-policy-ebs-csi.json"
-            - ".github/workflows/infra-deploy.yml"
+    pull_request:
+        branches: [main]
     workflow_dispatch:
         inputs:
             apply:
