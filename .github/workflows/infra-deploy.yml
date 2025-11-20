@@ -1,4 +1,4 @@
-name: Terraform + Helm Deploy
+name: Terraform Deploy
 
 on:
     push:
@@ -7,12 +7,11 @@ on:
             - "main.tf"
             - "variables.tf"
             - "trust-policy-ebs-csi.json"
-            - "charts/**"
             - ".github/workflows/infra-deploy.yml"
     workflow_dispatch:
         inputs:
             apply:
-                description: "Run terraform apply and deploy Helm charts after plan?"
+                description: "Run terraform apply after plan?"
                 required: true
                 default: "false"
                 type: choice
@@ -70,13 +69,13 @@ jobs:
               working-directory: .
               run: terraform plan -input=false
 
-    terraform-apply-and-helm:
-        name: Terraform Apply + Helm Deploy
+    terraform-apply:
+        name: Terraform Apply
         runs-on: ubuntu-latest
         needs: terraform-plan
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true'
         # Same environment name pattern as plan job
-        environment: presto-${{ github.event.inputs.environment }}
+        environment: presto-${{ github.event_inputs.environment }}
 
         steps:
             - name: Checkout
@@ -101,27 +100,3 @@ jobs:
             - name: Terraform apply
               working-directory: .
               run: terraform apply -input=false -auto-approve
-
-            - name: Install kubectl
-              uses: azure/setup-kubectl@v4
-              with:
-                  version: "latest"
-
-            - name: Install Helm
-              uses: azure/setup-helm@v4
-              with:
-                  version: "latest"
-
-            - name: Configure kubectl for EKS
-              working-directory: .
-              run: |
-                  EKS_CONNECT_CMD=$(terraform output -raw eks_connect)
-                  echo "Running: $EKS_CONNECT_CMD"
-                  eval "$EKS_CONNECT_CMD"
-
-            - name: Deploy Helm charts (Geth, Observability, Load Generator)
-              working-directory: .
-              run: |
-                  helm upgrade --install geth ./charts/geth-node
-                  helm upgrade --install observability ./charts/observability
-                  helm upgrade --install loadgen ./charts/load-generator
