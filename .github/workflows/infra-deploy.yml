@@ -8,6 +8,8 @@ on:
             - "variables.tf"
             - "trust-policy-ebs-csi.json"
             - ".github/workflows/infra-deploy.yml"
+    pull_request:
+        branches: [main]
     workflow_dispatch:
         inputs:
             apply:
