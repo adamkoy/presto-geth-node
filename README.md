@@ -1,4 +1,4 @@
-# Ethereum DevNet Load‑Testing Stack
+## Ethereum DevNet Load‑Testing Stack
 
 Complete, reproducible setup for a single‑node Ethereum devnet on Kubernetes (Kind or EKS), a Python‑based load generator, and an observability stack (Prometheus + Grafana) – all wired together via Helm and Terraform.
 
@@ -122,6 +122,36 @@ curl -s -X POST http://localhost:8545 \
 ```
 
 You should see a non‑zero block height and a balance of at least `100 ETH` (it will climb as the workload sends funds to that address).
+
+#### Verify 6‑second block production
+
+With the JSON‑RPC port‑forward still running:
+
+```bash
+while true; do
+  date
+  curl -s -X POST http://localhost:8545 \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+    | jq -r '.result'
+  sleep 6
+done
+```
+
+You should see the block number increase roughly every 6 seconds. The exact cadence will depend on scheduling and load, but over a few minutes it averages to ~10 blocks/min.
+
+#### Verify persistence across restarts
+
+1. Note the current block number using the loop above or a single `eth_blockNumber` call.
+2. Restart the Geth pod (PVC is retained):
+
+```bash
+kubectl delete pod -l app.kubernetes.io/name=geth-node
+kubectl get pods
+```
+
+3. Once the pod is back to `Running`, hit `eth_blockNumber` again.  
+   The block height should continue from the previous value, not reset to zero – this confirms that chain data is persisted on the PVC.
 
 ### 4. Watch the workload + dashboards
 
@@ -319,16 +349,27 @@ helm upgrade --install loadgen charts/load-generator
 
 ---
 
-## Secrets and CI/CD
+## CI/CD and Environments
 
 Sensitive values (AWS credentials, Docker registry tokens, Grafana admin password, etc.) are intentionally not committed. See `SECRETS.md` for a list of values that should live in your CI/CD secrets store (for example GitHub Actions secrets).
 
-A GitHub Actions workflow is not wired up yet, but the intended pipeline is:
+GitHub Actions is used for linting, image builds, and infra/app deploys:
 
-- Lint Python and YAML
-- Run tests for the workload (once test suite is added)
-- Build and push the workload image
-- Optionally run lightweight security and dependency scans
+- **`ci-cd.yml`** – lints:
+  - Python: `flake8` + `mypy` on `load-generator-image/workload.py`
+  - YAML: `yamllint` on workflows and Helm `Chart.yaml` / `values.yaml`
+- **`build-load-generator.yml`** – builds and pushes the workload image:
+  - Job 1: flake8 on `workload.py`
+  - Job 2: on success, `docker/build-push-action` builds and pushes `adamkkk89/geth-workload:latest`
+- **`infra-deploy.yml`** – Terraform plan/apply for EKS:
+  - Uses OIDC to assume an AWS IAM role (`AWS_ROLE_NAME`)
+  - On manual runs, takes an `environment` (`dev|stage|prod`) and an `apply` flag
+- **`helm-deploy.yml`** – Helm deploy of the three charts to the selected environment:
+  - Reads the `eks_connect` output from Terraform to configure `kubectl`
+- **`full-pipeline.yml`** / **`full-pipeline`** (if enabled) – orchestrates the above:
+  - Lint → build image → Terraform → Helm in one run
+
+GitHub Environments (e.g. `presto-dev`, `presto-stage`, `presto-prod`) can be used to require approvals before Terraform `apply` and Helm deploy run in each stage.
 
 ---
 
