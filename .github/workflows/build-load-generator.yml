@@ -10,7 +10,7 @@ on:
 
 env:
     # Full image reference, e.g. "your-user/geth-workload:latest" or "ghcr.io/owner/geth-workload:latest"
-    WORKLOAD_IMAGE: ${{ secrets.DOCKER_USERNAME }}
+    WORKLOAD_IMAGE: "docker.io/adamkkk89/geth-workload:latest"
 
 jobs:
     build-and-push:
