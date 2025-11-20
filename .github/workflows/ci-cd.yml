@@ -40,7 +40,6 @@ jobs:
       - name: Lint YAML files
         run: |
           yamllint \
-            -d "{extends: default, rules: {document-start: disable, truthy: disable, line-length: {max: 120}, empty-lines: disable, new-line-at-end-of-file: disable}}" \
             .github/workflows \
             charts/*/Chart.yaml \
             charts/*/values.yaml
