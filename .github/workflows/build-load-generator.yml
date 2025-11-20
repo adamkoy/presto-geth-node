@@ -2,7 +2,7 @@ name: Build and Push Load Generator Image
 
 on:
     push:
-        branches: [main]
+        branches: [infra-setup]
         paths:
             - "load-generator-image/**"
             - ".github/workflows/build-load-generator.yml"
@@ -10,7 +10,7 @@ on:
 
 env:
     # Full image reference, e.g. "your-user/geth-workload:latest" or "ghcr.io/owner/geth-workload:latest"
-    WORKLOAD_IMAGE: ${{ secrets.WORKLOAD_IMAGE }}
+    WORKLOAD_IMAGE: ${{ secrets.DOCKER_USERNAME }}
 
 jobs:
     build-and-push:
@@ -30,9 +30,9 @@ jobs:
             - name: Log in to container registry
               uses: docker/login-action@v3
               with:
-                  registry: ${{ secrets.REGISTRY_SERVER }}
-                  username: ${{ secrets.REGISTRY_USERNAME }}
-                  password: ${{ secrets.REGISTRY_PASSWORD }}
+                  registry: docker.io
+                  username: ${{ secrets.DOCKER_USERNAME }}
+                  password: ${{ secrets.DOCKER_SECRET }}
 
             - name: Build and push load generator image
               uses: docker/build-push-action@v5
