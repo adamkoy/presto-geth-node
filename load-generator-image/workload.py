@@ -121,7 +121,7 @@ def _run_load(
     lock = threading.Lock()
 
     def worker(worker_id: int) -> None:
-        nonlocal total_sent, total_failed, total_gas_used, latencies
+        nonlocal total_sent, total_failed, total_gas_used
         while time.time() < stop_at:
             start = time.perf_counter()
             try:
