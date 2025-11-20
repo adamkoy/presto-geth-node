@@ -4,7 +4,23 @@ Complete, reproducible setup for a single‑node Ethereum devnet on Kubernetes (
 
 ---
 
-## Overview
+## Table of contents
+
+- [Introduction](#introduction)
+  - [Directory overview](#directory-overview)
+- [Usage](#usage)
+  - [Local (Kind)](#local-kind)
+  - [EKS (AWS)](#eks-aws)
+  - [Verification (blocks, persistence, metrics)](#verification-blocks-persistence-metrics)
+- [Configuration reference](#configuration-reference)
+- [Local development of the workload](#local-development-of-the-workload)
+- [CI/CD and environments](#cicd-and-environments)
+- [Cleanup](#cleanup)
+- [Troubleshooting notes](#troubleshooting-notes)
+
+---
+
+## Introduction
 
 The repository is organised around three Helm charts and one Terraform module:
 
@@ -32,7 +48,24 @@ There is also a thin orchestration script:
 
 ---
 
-## Prerequisites
+### Directory overview
+
+```text
+.
+├── charts/                 # Helm charts for geth-node, observability, load-generator
+├── load-generator-image/   # Dockerfile + Python workload
+├── .github/workflows/      # GitHub Actions pipelines (lint, image, infra, helm, full-pipeline)
+├── deploy.sh               # Helper script for local Kind and EKS deploys
+├── main.tf, variables.tf   # Terraform EKS stack
+├── SECRETS.md              # Documentation of CI/CD secrets (no real secrets committed)
+└── README.md               # This file
+```
+
+---
+
+## Usage
+
+### Prerequisites
 
 Install these locally:
 
@@ -49,11 +82,11 @@ For EKS you also need:
 
 ---
 
-## Quick Start – Local (Kind)
+### Local (Kind)
 
 This path gives you a full devnet + workload + dashboards on a local Kind cluster.
 
-### 1. Deploy
+#### 1. Deploy
 
 From the repo root:
 
@@ -77,7 +110,7 @@ kubectl get pods -A
 kubectl get svc -A
 ```
 
-### 2. Access endpoints
+#### 2. Access endpoints
 
 Port‑forward from your laptop:
 
@@ -100,7 +133,9 @@ Then in a browser:
 - **Grafana**: `http://localhost:3000` (default `admin` / `admin`)
 - **Prometheus**: `http://localhost:9090`
 
-### 3. Verify the devnet
+### Verification (blocks, persistence, metrics)
+
+#### 3. Verify the devnet
 
 With the port‑forward in place:
 
@@ -123,7 +158,7 @@ curl -s -X POST http://localhost:8545 \
 
 You should see a non‑zero block height and a balance of at least `100 ETH` (it will climb as the workload sends funds to that address).
 
-#### Verify 6‑second block production
+#### 4. Verify 6‑second block production
 
 With the JSON‑RPC port‑forward still running:
 
@@ -140,7 +175,7 @@ done
 
 You should see the block number increase roughly every 6 seconds. The exact cadence will depend on scheduling and load, but over a few minutes it averages to ~10 blocks/min.
 
-#### Verify persistence across restarts
+#### 5. Verify persistence across restarts
 
 1. Note the current block number using the loop above or a single `eth_blockNumber` call.
 2. Restart the Geth pod (PVC is retained):
@@ -153,7 +188,7 @@ kubectl get pods
 3. Once the pod is back to `Running`, hit `eth_blockNumber` again.  
    The block height should continue from the previous value, not reset to zero – this confirms that chain data is persisted on the PVC.
 
-### 4. Watch the workload + dashboards
+#### 6. Watch the workload + dashboards
 
 Tail the workload logs:
 
@@ -179,11 +214,11 @@ In Grafana, open the “Geth DevNet Performance Dashboard”. It includes:
 
 ---
 
-## Quick Start – EKS
+### EKS (AWS)
 
 The EKS path uses Terraform to provision the cluster and wiring, then uses the same Helm charts.
 
-### 1. Deploy the cluster
+#### 1. Deploy the cluster
 
 From the repo root:
 
@@ -206,7 +241,7 @@ $(terraform output -raw eks_connect)
 kubectl get nodes
 ```
 
-### 2. Deploy the stack via `deploy.sh`
+#### 2. Deploy the stack via `deploy.sh`
 
 With `kubectl` pointing at the EKS cluster:
 
@@ -222,7 +257,7 @@ This skips Kind creation and just:
 
 You can then re‑use the same port‑forward commands as in the Kind section to reach Geth, Prometheus, and Grafana.
 
-### 3. Storage on EKS
+#### 3. Storage on EKS
 
 On EKS, the Geth chart uses a PVC backed by the default StorageClass (for most clusters this is `gp2` or `gp3` on EBS). The EBS CSI addon and its IAM role are managed entirely by Terraform; there is no need to run `aws eks create-addon` by hand.
 
@@ -240,7 +275,7 @@ Be aware that changing `storageClassName` on an existing PVC requires recreating
 
 ---
 
-## Configuration Reference
+## Configuration reference
 
 ### Geth node (`charts/geth-node`)
 
@@ -312,7 +347,7 @@ Grafana:
 
 ---
 
-## Local Development of the Workload
+## Local development of the workload
 
 If you want to tweak the workload logic, you can run it directly on your machine:
 
@@ -349,7 +384,7 @@ helm upgrade --install loadgen charts/load-generator
 
 ---
 
-## CI/CD and Environments
+## CI/CD and environments
 
 Sensitive values (AWS credentials, Docker registry tokens, Grafana admin password, etc.) are intentionally not committed. See `SECRETS.md` for a list of values that should live in your CI/CD secrets store (for example GitHub Actions secrets).
 
@@ -393,7 +428,7 @@ This uninstalls the Helm releases and runs `terraform destroy` to tear down the 
 
 ---
 
-## Troubleshooting Notes
+## Troubleshooting notes
 
 Some issues you might hit and how to recover:
 
