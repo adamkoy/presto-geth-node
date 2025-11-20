@@ -37,14 +37,14 @@ The repository is organised around three Helm charts and one Terraform module:
   - Prometheus scrapes Geth and the workload
   - Grafana ships with a pre‑wired dashboard
 - **Terraform** (`main.tf`, `variables.tf`)
-  - Provisions an EKS cluster and node group
-  - Installs the EBS CSI driver via an addon + IRSA
+  - Provisions an EKS cluster and managed node group in AWS
+  - Installs the EBS CSI driver via an addon + IRSA so Geth can use EBS volumes
 
 There is also a thin orchestration script:
 
 - **`deploy.sh`**
   - `kind` path: create a local Kind cluster and install the three Helm charts
-  - `eks` path: run Terraform to stand up EKS, then install the same charts
+  - `eks` path: run Terraform to create/update the EKS cluster (and addons), then install the same charts
 
 ---
 
