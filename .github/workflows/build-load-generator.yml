@@ -1,5 +1,4 @@
 name: Build and Push Load Generator Image
-
 on:
     push:
         branches: [infra-setup]
