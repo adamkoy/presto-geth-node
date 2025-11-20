@@ -64,9 +64,22 @@ data:
         },
         {
           "id": 5,
-          "title": "Transaction Failure Rate",
+          "title": "P95 Transaction Latency",
           "type": "graph",
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(geth_workload_tx_latency_seconds_bucket[5m])) by (le))",
+              "refId": "A",
+              "legendFormat": "P95 latency (s)"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Transaction Failure Rate",
+          "type": "graph",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
           "targets": [
             {
               "expr": "geth_workload_failure_rate * 100",
@@ -76,10 +89,10 @@ data:
           ]
         },
         {
-          "id": 6,
+          "id": 7,
           "title": "Gas Used (MGas/s)",
           "type": "graph",
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
           "targets": [
             {
               "expr": "geth_workload_mgas_per_sec",
@@ -89,7 +102,7 @@ data:
           ]
         },
         {
-          "id": 7,
+          "id": 8,
           "title": "RPC RPS",
           "type": "graph",
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
@@ -98,6 +111,19 @@ data:
               "expr": "geth_workload_rpc_rps",
               "refId": "A",
               "legendFormat": "RPC RPS"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "RPC Error Rate",
+          "type": "graph",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+          "targets": [
+            {
+              "expr": "rate(geth_workload_rpc_errors_total[5m])",
+              "refId": "A",
+              "legendFormat": "RPC errors / sec"
             }
           ]
         }
