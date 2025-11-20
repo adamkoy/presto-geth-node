@@ -1,475 +1,374 @@
-# Ethereum DevNet Load Testing Infrastructure
+# Ethereum DevNet Load‑Testing Stack
 
-Complete infrastructure for running a single-node Ethereum devnet with Geth, comprehensive load testing, and performance monitoring.
+Complete, reproducible setup for a single‑node Ethereum devnet on Kubernetes (Kind or EKS), a Python‑based load generator, and an observability stack (Prometheus + Grafana) – all wired together via Helm and Terraform.
 
-## 🎯 Objective
+---
 
-Deploy and operate a single-node Ethereum devnet using Geth in developer mode on Kubernetes, perform load testing with Python, and visualize key performance metrics in Grafana.
+## Overview
 
-## 🏗️ Architecture
+The repository is organised around three Helm charts and one Terraform module:
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Load Generator │    │   Geth DevNet   │    │  Observability  │
-│   (Python + Web3)│◄──►│  (Single Node)  │    │ (Prometheus +   │
-│                 │    │                 │    │   Grafana)      │
-│ • TPS Control    │    │ • 6-sec blocks  │    │                 │
-│ • Concurrency    │    │ • Persistent PVC│    │ • TPS over time │
-│ • Metrics Export │    │ • Prefunded acct│    │ • Latency       │
-│                 │    │                 │    │ • Failure rates  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                    ┌────────────────────┐
-                    │  Kubernetes/EKS    │
-                    │  • StatefulSets    │
-                    │  • Services        │
-                    │  • ConfigMaps      │
-                    │  • PersistentVolume│
-                    └────────────────────┘
-```
+- **`charts/geth-node`** – Geth devnet node
+  - Single node, dev mode, ~6s blocks
+  - Persistent storage via PVC (EBS on EKS)
+  - HTTP JSON‑RPC + metrics endpoint
+  - Prefunded account `0x62358b29b9e3e70ff51D88766e41a339D3e8FFff`
+- **`charts/load-generator`** – Python workload
+  - Web3‑based transaction generator
+  - Configurable TPS, concurrency, and duration
+  - Exposes Prometheus metrics on port `8000`
+- **`charts/observability`** – Prometheus + Grafana
+  - Prometheus scrapes Geth and the workload
+  - Grafana ships with a pre‑wired dashboard
+- **Terraform** (`main.tf`, `variables.tf`)
+  - Provisions an EKS cluster and node group
+  - Installs the EBS CSI driver via an addon + IRSA
 
-## ✅ Requirements Fulfilled
+There is also a thin orchestration script:
 
-### Geth DevNet
-- ✅ Single node deployment
-- ✅ 6-second block production (`--dev.period=6`)
-- ✅ Persistent state with PVC
-- ✅ Prefunded account: `0x62358b29b9e3e70ff51D88766e41a339D3e8FFff` (100 ETH)
+- **`deploy.sh`**
+  - `kind` path: create a local Kind cluster and install the three Helm charts
+  - `eks` path: run Terraform to stand up EKS, then install the same charts
 
-### Python Load Generator
-- ✅ JSON-RPC connectivity
-- ✅ Configurable TPS and concurrency
-- ✅ TPS, RPS, MGas/s, latency, and failure rate metrics
-- ✅ Prometheus metrics export
+---
 
-### Grafana Dashboard
-- ✅ TPS over time
-- ✅ RPC RPS over time
-- ✅ MGas/s over time
-- ✅ Latency (95th percentile)
-- ✅ Failure rates
-- ✅ Additional metrics (CPU, memory, connections)
+## Prerequisites
 
-## 🚀 Quick Start with Kind (Local Development)
+Install these locally:
 
-### Prerequisites
 - Docker
-- Kind (Kubernetes in Docker)
-- kubectl
-- Python 3.11+ (for local development)
+- `kubectl`
+- `helm`
+- `kind` (for local clusters)
+- `terraform` and `aws` CLI (for EKS)
 
-### 1. Create Kind Cluster
+For EKS you also need:
+
+- An AWS account and credentials with permissions to create VPC/EKS/IAM
+- An S3 backend or local state (configured in Terraform as you prefer)
+
+---
+
+## Quick Start – Local (Kind)
+
+This path gives you a full devnet + workload + dashboards on a local Kind cluster.
+
+### 1. Deploy
+
+From the repo root:
 
 ```bash
-# Create kind cluster with extra resources for Geth
-cat > kind-config.yaml << EOF
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 30000
-    hostPort: 30000
-    protocol: TCP
-  - containerPort: 30001
-    hostPort: 30001
-    protocol: TCP
-  - containerPort: 30909
-    hostPort: 30909
-    protocol: TCP
-EOF
-
-kind create cluster --config kind-config.yaml --name geth-devnet
+./deploy.sh deploy
 ```
 
-### 2. Deploy Everything
+What this does:
+
+- Creates a Kind cluster named `geth-devnet` (if it does not exist)
+- Installs the three Helm charts:
+  - `geth-node` as release `geth`
+  - `observability` as release `observability`
+  - `load-generator` as release `loadgen`
+- Waits for all pods to become ready
+
+You can sanity‑check:
 
 ```bash
-# Deploy Geth node
-kubectl apply -f geth-dev.yaml
-
-# Deploy monitoring stack
-kubectl apply -f monitoring.yaml
-
-# Deploy load generator
-kubectl apply -f load-generator.yaml
-
-# Wait for all pods to be ready
-kubectl wait --for=condition=ready pod --all --timeout=300s
-```
-
-### 3. Verify Deployment
-
-```bash
-# Check all components
 kubectl get pods -A
 kubectl get svc -A
-
-# Verify 6-second block production
-kubectl logs -f deployment/geth-dev -c geth
-
-# Test Geth connectivity
-kubectl run test --image=curlimages/curl --rm -it --restart=Never \
-  -- curl -X POST http://geth-dev-lb.default.svc.cluster.local:8545 \
-  -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
-### 4. Access Dashboards
+### 2. Access endpoints
+
+Port‑forward from your laptop:
 
 ```bash
-# Port forward Grafana (admin/admin)
-kubectl port-forward svc/grafana -n monitoring 3000:3000
+# Geth JSON‑RPC
+kubectl port-forward svc/geth-geth-node 8545:8545
 
-# Port forward Prometheus
-kubectl port-forward svc/prometheus -n monitoring 9090:9090
+# Grafana (monitoring namespace)
+kubectl port-forward -n monitoring \
+  svc/observability-observability-grafana 3000:3000
 
-# Open in browser:
-# Grafana: http://localhost:3000 (admin/admin)
-# Prometheus: http://localhost:9090
+# Prometheus
+kubectl port-forward -n monitoring \
+  svc/observability-observability-prometheus 9090:9090
 ```
 
-### 5. Run Load Test
+Then in a browser:
+
+- **Geth JSON‑RPC** (curl only): `http://localhost:8545`
+- **Grafana**: `http://localhost:3000` (default `admin` / `admin`)
+- **Prometheus**: `http://localhost:9090`
+
+### 3. Verify the devnet
+
+With the port‑forward in place:
 
 ```bash
-# Run load generator with custom parameters
-kubectl set env deployment/load-generator \
-  TARGET_TPS=50 \
-  CONCURRENCY=10 \
-  DURATION=600
+# Latest block number
+curl -s -X POST http://localhost:8545 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
-# Trigger a new run
-kubectl rollout restart deployment/load-generator
-
-# Monitor logs
-kubectl logs -f deployment/load-generator
+# Prefunded account balance
+curl -s -X POST http://localhost:8545 \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc":"2.0",
+    "method":"eth_getBalance",
+    "params":["0x62358b29b9e3e70ff51D88766e41a339D3e8FFff","latest"],
+    "id":1
+  }'
 ```
 
-## 🏭 Production Deployment (EKS)
+You should see a non‑zero block height and a balance of at least `100 ETH` (it will climb as the workload sends funds to that address).
 
-### Prerequisites
-- AWS CLI configured
-- Terraform >= 1.6.0
-- kubectl
+### 4. Watch the workload + dashboards
 
-### Deploy Infrastructure
+Tail the workload logs:
 
 ```bash
-# Initialize and deploy EKS cluster
+kubectl logs -f deploy/loadgen-load-generator
+```
+
+You should see log lines like:
+
+- Connection to the Geth JSON‑RPC endpoint
+- Prefunded account balance
+- Periodic load runs with metrics summaries (TPS, RPS, MGas/s, latency, failures)
+
+In Grafana, open the “Geth DevNet Performance Dashboard”. It includes:
+
+- **Current Block Number** – `max(geth_workload_head_block_number)`
+- **Block Production Rate (blocks/min)** – `sum(rate(geth_workload_head_block_number[5m])) * 60`
+- **TPS Over Time** – `geth_workload_tps`
+- **RPC RPS** – `geth_workload_rpc_rps`
+- **Gas Used (MGas/s)** – `geth_workload_mgas_per_sec`
+- **Average Transaction Latency** – `geth_workload_avg_latency_seconds`
+- **Failure Rate** – `geth_workload_failure_rate * 100`
+
+---
+
+## Quick Start – EKS
+
+The EKS path uses Terraform to provision the cluster and wiring, then uses the same Helm charts.
+
+### 1. Deploy the cluster
+
+From the repo root:
+
+```bash
 terraform init
 terraform apply
+```
 
-# Configure kubectl
+The Terraform module:
+
+- Creates the VPC, subnets, security groups, and EKS cluster
+- Provisions a managed node group
+- Configures OIDC and an IRSA role for the **EBS CSI driver**
+- Installs the `aws-ebs-csi-driver` addon and points it at the IRSA role
+
+After `terraform apply` completes, configure `kubectl` using the helper output:
+
+```bash
 $(terraform output -raw eks_connect)
-
-# Verify cluster
 kubectl get nodes
 ```
 
-### Deploy Application Stack
+### 2. Deploy the stack via `deploy.sh`
+
+With `kubectl` pointing at the EKS cluster:
 
 ```bash
-# Apply all manifests
-kubectl apply -f geth-dev.yaml
-kubectl apply -f monitoring.yaml
-kubectl apply -f load-generator.yaml
-
-# Wait for completion
-kubectl wait --for=condition=ready pod --all --timeout=600s
+./deploy.sh -e eks deploy
 ```
 
-### Access External Services
+This skips Kind creation and just:
+
+- Verifies dependencies (`kubectl`, `terraform`, `aws`, `helm`)
+- Ensures Terraform has been applied
+- Installs the three Helm charts into the EKS cluster
+
+You can then re‑use the same port‑forward commands as in the Kind section to reach Geth, Prometheus, and Grafana.
+
+### 3. Storage on EKS
+
+On EKS, the Geth chart uses a PVC backed by the default StorageClass (for most clusters this is `gp2` or `gp3` on EBS). The EBS CSI addon and its IAM role are managed entirely by Terraform; there is no need to run `aws eks create-addon` by hand.
+
+If you want to change the storage class or size, adjust:
+
+- `charts/geth-node/values.yaml` → `persistence.storageClass`, `persistence.size`
+
+Apply with:
 
 ```bash
-# Get LoadBalancer URLs
-kubectl get svc -o wide
-
-# Example output:
-# geth-dev-lb     LoadBalancer   10.100.XX.XX    XX.XXX.XXX.XXX   8545:XXXXX/TCP
-# grafana         LoadBalancer   10.100.XX.XX    XX.XXX.XXX.XXX   3000:XXXXX/TCP
+helm upgrade geth charts/geth-node
 ```
 
-## 📊 Configuration
+Be aware that changing `storageClassName` on an existing PVC requires recreating the PVC.
 
-### Geth Parameters
-- **Block time**: 6 seconds (`--dev.period=6`)
-- **Chain ID**: 1337 (dev)
-- **Gas limit**: 8M per block
-- **Prefunded account**: `0x62358b29b9e3e70ff51D88766e41a339D3e8FFff` (100 ETH)
-- **API**: eth,net,web3,personal,debug
-- **Storage**: 10Gi PVC
+---
 
-### Load Generator Parameters
-- **TPS**: Configurable via `TARGET_TPS` env var (default: 10)
-- **Concurrency**: Configurable via `CONCURRENCY` env var (default: 5)
-- **Duration**: Configurable via `DURATION` env var (default: 300s)
-- **Metrics port**: 8000
+## Configuration Reference
 
-### Monitoring
-- **Prometheus**: Scrapes every 15s
-- **Grafana**: Pre-configured dashboard
-- **Retention**: 200h of metrics
+### Geth node (`charts/geth-node`)
 
-## 🔧 Development
+Key defaults (see `charts/geth-node/values.yaml` for the full list):
 
-### Local Testing
+- **Image**: official `ethereum/client-go`
+- **Mode**: `--dev` with a 6‑second block period
+- **Chain ID**: `1337`
+- **HTTP JSON‑RPC**: enabled on port `8545` with permissive CORS/host for in‑cluster access
+- **Metrics**: Prometheus metrics endpoint exposed on port `6060` at `/debug/metrics/prometheus`
+- **Persistence**:
+  - PVC named `<release>-geth-node-data`
+  - Configurable `storageClass` and `size`
+- **Prefunding**:
+  - Either baked via dev mode accounts or via a small Job that sends funds to
+    `0x62358b29b9e3e70ff51D88766e41a339D3e8FFff`
+
+### Load generator (`charts/load-generator`)
+
+The workload image is built from `load-generator-image/Dockerfile.workload` and runs `workload.py`. It connects to the Geth JSON‑RPC endpoint and repeatedly sends small value transfers from a dev account to the prefunded target address.
+
+Configuration (all via env vars in the Deployment):
+
+- **`GETH_URL`**
+  - Default: `http://geth-geth-node.default.svc.cluster.local:8545`
+  - Set in the Helm values under `geth.url`
+- **`TARGET_TPS`**
+  - Total target transactions per second across all workers
+  - Helm value: `workload.targetTps`
+- **`CONCURRENCY`**
+  - Number of worker threads sending transactions
+  - Helm value: `workload.concurrency`
+- **`DURATION_SECONDS`**
+  - Duration of each load run before metrics are summarised
+  - Helm value: `workload.durationSeconds`
+- **`METRICS_PORT`**
+  - Port for the Prometheus metrics HTTP endpoint
+  - Helm value: `workload.metricsPort` (default `8000`)
+
+Metrics exposed by `workload.py` (all prefixed with `geth_workload_`):
+
+- `geth_workload_tps`
+- `geth_workload_rpc_rps`
+- `geth_workload_mgas_per_sec`
+- `geth_workload_failure_rate`
+- `geth_workload_avg_latency_seconds`
+- `geth_workload_head_block_number`
+
+The chart also annotates the pod for Prometheus scraping and creates a small ClusterIP service so Prometheus can target it directly.
+
+### Observability (`charts/observability`)
+
+Prometheus:
+
+- Scrape interval and evaluation interval default to `15s`
+- Static scrape configs for:
+  - The Prometheus server itself
+  - The Geth node metrics endpoint (service name + namespace from values)
+  - The load generator metrics endpoint (service name + namespace from values)
+- Optional Kubernetes pod discovery if you want to point it at other workloads
+
+Grafana:
+
+- Uses the official Grafana image
+- Default admin user/password: `admin` / `admin` (see `values.yaml` – change this for anything non‑throwaway)
+- One datasource: Prometheus (in‑cluster)
+- One pre‑provisioned dashboard: Geth DevNet performance (see
+  `charts/observability/templates/grafana-dashboard.yaml`)
+
+---
+
+## Local Development of the Workload
+
+If you want to tweak the workload logic, you can run it directly on your machine:
 
 ```bash
-# Install dependencies
+cd load-generator-image
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# Run tests
-python -m pytest test_load_generator.py -v
-
-# Run load generator locally
-export GETH_URL=http://localhost:8545
+export GETH_URL=http://localhost:8545       # e.g. port‑forwarded Geth
 export TARGET_TPS=5
 export CONCURRENCY=2
-export DURATION=30
-python load_generator.py
+export DURATION_SECONDS=60
+export METRICS_PORT=8000
+
+python workload.py
 ```
 
-### Building Docker Image
+To build and push the Docker image:
 
 ```bash
-# Build locally
-docker build -t load-generator:latest .
+docker build --platform=linux/amd64 \
+  -t <your-registry>/geth-workload:latest \
+  -f Dockerfile.workload .
 
-# Run locally (requires Geth running)
-docker run --rm \
-  -e GETH_URL=http://host.docker.internal:8545 \
-  -e TARGET_TPS=10 \
-  -e CONCURRENCY=3 \
-  -e DURATION=60 \
-  -p 8000:8000 \
-  load-generator:latest
+docker push <your-registry>/geth-workload:latest
 ```
 
-## 🧪 CI/CD Pipeline
-
-GitHub Actions pipeline includes:
-- **Linting**: Python (flake8, black, isort, mypy) and YAML
-- **Testing**: Unit tests with pytest
-- **Building**: Docker image build and push to GHCR
-- **Security**: Automated dependency scanning
-
-## 🧹 Cleanup
-
-### Kind Cluster
-```bash
-kubectl delete -f load-generator.yaml
-kubectl delete -f monitoring.yaml
-kubectl delete -f geth-dev.yaml
-kind delete cluster --name geth-devnet
-```
-
-### EKS Cluster
-```bash
-kubectl delete -f load-generator.yaml
-kubectl delete -f monitoring.yaml
-kubectl delete -f geth-dev.yaml
-terraform destroy
-```
-
-## 📈 Performance Benchmarks
-
-Typical performance on t3.medium instance:
-- **Block production**: ~10 blocks/min (6-second target)
-- **Max TPS**: ~50-100 (depends on gas limits)
-- **Latency**: 100-500ms (95th percentile)
-- **Memory usage**: 200-500MB
-- **CPU usage**: 10-30%
-
-## 💾 Optional: Persistent Storage on EKS (EBS CSI Driver)
-
-By default, the simple dev node uses `emptyDir` (ephemeral). To back Geth with a real EBS volume on EKS:
-
-### 1. Prerequisites (EKS)
-
-- EKS cluster: `geth-dev-eks` in `eu-west-1`
-- OIDC issuer: `https://oidc.eks.eu-west-1.amazonaws.com/id/B7A3E498F9BAE231F61076746475B1BE`
-- AWS account ID: `717916807684`
-
-Verify:
+Then update `charts/load-generator/values.yaml` → `image.repository` / `image.tag` and redeploy:
 
 ```bash
-aws eks describe-cluster \
-  --name geth-dev-eks \
-  --region eu-west-1 \
-  --query "cluster.identity.oidc.issuer" \
-  --output text
-
-aws iam list-open-id-connect-providers | \
-  grep B7A3E498F9BAE231F61076746475B1BE
+helm upgrade --install loadgen charts/load-generator
 ```
 
-### 2. Create IAM role for the EBS CSI driver
-
-```bash
-cat > trust-policy-ebs-csi.json << 'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::717916807684:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/B7A3E498F9BAE231F61076746475B1BE"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "oidc.eks.eu-west-1.amazonaws.com/id/B7A3E498F9BAE231F61076746475B1BE:aud": "sts.amazonaws.com",
-          "oidc.eks.eu-west-1.amazonaws.com/id/B7A3E498F9BAE231F61076746475B1BE:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa"
-        }
-      }
-    }
-  ]
-}
-EOF
-
-aws iam create-role \
-  --role-name AmazonEKS_EBS_CSI_DriverRole \
-  --assume-role-policy-document file://trust-policy-ebs-csi.json
-
-aws iam attach-role-policy \
-  --role-name AmazonEKS_EBS_CSI_DriverRole \
-  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
-```
-
-### 3. Install the EBS CSI driver add-on
-
-```bash
-aws eks create-addon \
-  --cluster-name geth-dev-eks \
-  --region eu-west-1 \
-  --addon-name aws-ebs-csi-driver \
-  --service-account-role-arn arn:aws:iam::717916807684:role/AmazonEKS_EBS_CSI_DriverRole
-```
-
-### 4. Create StorageClass and PVC (example)
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: gp3-ebs
-provisioner: ebs.csi.aws.com
-parameters:
-  type: gp3
-reclaimPolicy: Delete
-allowVolumeExpansion: true
-volumeBindingMode: WaitForFirstConsumer
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: geth-data-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 20Gi
-  storageClassName: gp3-ebs
-```
 
-Apply:
+## Secrets and CI/CD
+
+Sensitive values (AWS credentials, Docker registry tokens, Grafana admin password, etc.) are intentionally not committed. See `SECRETS.md` for a list of values that should live in your CI/CD secrets store (for example GitHub Actions secrets).
+
+A GitHub Actions workflow is not wired up yet, but the intended pipeline is:
+
+- Lint Python and YAML
+- Run tests for the workload (once test suite is added)
+- Build and push the workload image
+- Optionally run lightweight security and dependency scans
+
+---
+
+## Cleanup
+
+### Kind
 
 ```bash
-kubectl apply -f pvc.yaml
-kubectl get pvc geth-data-pvc
+./deploy.sh cleanup
 ```
 
-### 5. Mount PVC in a Geth Deployment
+This uninstalls the three Helm releases and deletes the Kind cluster.
 
-For a persistent node, adjust a Deployment to use:
+### EKS
 
-```yaml
-volumeMounts:
-  - name: datadir
-    mountPath: /root/.ethereum
-volumes:
-  - name: datadir
-    persistentVolumeClaim:
-      claimName: geth-data-pvc
-```
-
-This keeps Geth chain data on an EBS volume across pod restarts while still using the same dev node pattern as `geth-simple.yaml`.
-
-## 🛠️ Troubleshooting
-
-### Geth Issues
 ```bash
-# Check Geth logs
-kubectl logs deployment/geth-dev -c geth
-
-# Verify genesis initialization
-kubectl logs deployment/geth-dev -c init-genesis
-
-# Check PVC
-kubectl get pvc
-kubectl describe pvc geth-data-pvc
+./deploy.sh -e eks cleanup
 ```
 
-### Load Generator Issues
-```bash
-# Check load generator logs
-kubectl logs deployment/load-generator
+This uninstalls the Helm releases and runs `terraform destroy` to tear down the EKS cluster and associated AWS resources.
 
-# Verify connectivity
-kubectl exec deployment/load-generator -- curl -f http://geth-dev-lb:8545
-```
+---
 
-### Monitoring Issues
-```bash
-# Check Prometheus targets
-kubectl port-forward svc/prometheus -n monitoring 9090:9090
-# Visit http://localhost:9090/targets
+## Troubleshooting Notes
 
-# Check Grafana logs
-kubectl logs deployment/grafana -n monitoring
-```
+Some issues you might hit and how to recover:
 
-## 🤝 Contributing
+- **Pods stuck in `Pending` with PVC errors**
+  - Check `kubectl get pvc` and verify that the claim is `Bound`
+  - If you need to change `storageClassName`, delete the PVC and re‑deploy; it is immutable
+- **Geth metrics returning 404**
+  - Ensure Prometheus is scraping `/debug/metrics/prometheus` on the Geth service port
+- **Workload metrics all zero**
+  - Confirm the workload container can reach Geth (logs will show connection attempts)
+  - Check that `TARGET_TPS` and `CONCURRENCY` are set to values > 0
+  - Hit `http://<loadgen-service>:8000/metrics` and look for `geth_workload_*`
+- **Grafana dashboard shows “No data”**
+  - Verify Prometheus has data for the relevant series via the Prometheus UI
+  - Confirm the dashboard queries match the metric names listed above
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with tests
-4. Ensure CI passes
-5. Submit a pull request
-
-## 📝 License
-
-This project is licensed under the MIT License.
+The logs from `deploy.sh`, the Geth pod, Prometheus, Grafana, and the workload pod together usually give enough signal to track down any misconfiguration quickly.
 
 
-# Monitor block production
-kubectl logs -f deployment/geth-dev
-
-# Check latest block
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-
-# Get account balance
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x71562b71999873db5b286df957af199ec94617f7","latest"],"id":1}'
-
-# Send a test transaction (unlock account first)
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"personal_unlockAccount","params":["0x71562b71999873db5b286df957af199ec94617f7",""],"id":1}'
-
-# Create a new account
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"personal_newAccount","params":["password"],"id":1}'# presto-geth-node
