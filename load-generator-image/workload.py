@@ -15,7 +15,7 @@ import logging
 import os
 import threading
 import time
-from typing import Final, Optional
+from typing import Final
 
 from prometheus_client import Gauge, start_http_server
 from web3 import Web3
@@ -328,5 +328,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
