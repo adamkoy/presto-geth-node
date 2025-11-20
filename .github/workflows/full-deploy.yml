@@ -23,6 +23,7 @@ jobs:
   build-image:
     name: Build & Push Load Generator Image
     runs-on: ubuntu-latest
+    environment: presto-${{ github.event.inputs.environment }}
 
     steps:
       - name: Checkout
@@ -138,5 +139,3 @@ jobs:
           helm upgrade --install geth ./charts/geth-node
           helm upgrade --install observability ./charts/observability
           helm upgrade --install loadgen ./charts/load-generator
-
-
