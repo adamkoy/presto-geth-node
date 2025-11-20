@@ -28,7 +28,7 @@ The repository is organised around three Helm charts and one Terraform module:
   - Single node, dev mode, ~6s blocks
   - Persistent storage via PVC (EBS on EKS)
   - HTTP JSON‑RPC + metrics endpoint
-  - Prefunded account `0x62358b29b9e3e70ff51D88766e41a339D3e8FFff`
+  - Kubernetes `Job` (prefunder) that, on startup, calls `eth_sendTransaction` from the dev account to prefund `0x62358b29b9e3e70ff51D88766e41a339D3e8FFff` with **100 ETH** (configurable via `prefund.amountWeiHex`)
 - **`charts/load-generator`** – Python workload
   - Web3‑based transaction generator
   - Configurable TPS, concurrency, and duration
@@ -57,7 +57,6 @@ There is also a thin orchestration script:
 ├── .github/workflows/      # GitHub Actions pipelines (lint, image, infra, helm, full-pipeline)
 ├── deploy.sh               # Helper script for local Kind and EKS deploys
 ├── main.tf, variables.tf   # Terraform EKS stack
-├── SECRETS.md              # Documentation of CI/CD secrets (no real secrets committed)
 └── README.md               # This file
 ```
 
@@ -386,7 +385,7 @@ helm upgrade --install loadgen charts/load-generator
 
 ## CI/CD and environments
 
-Sensitive values (AWS credentials, Docker registry tokens, Grafana admin password, etc.) are intentionally not committed. See `SECRETS.md` for a list of values that should live in your CI/CD secrets store (for example GitHub Actions secrets).
+Sensitive values (AWS credentials, Docker registry tokens, Grafana admin password, etc.) are intentionally not committed. These should be provided via GitHub Actions secrets or your local environment, not hard‑coded in the repo.
 
 GitHub Actions is used for linting, image builds, and infra/app deploys:
 
